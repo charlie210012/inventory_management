@@ -37,7 +37,7 @@ def get_system_prompt(production_data: Optional[Dict] = None) -> str:
     Genera el prompt del sistema con contexto de producción
     """
     base_prompt = """Eres un asistente inteligente especializado en gestión de producción y manufactura.
-Tu rol es ayudar a los usuarios del sistema de inventario BiofarmaGreen a:
+Tu rol es ayudar a los usuarios del sistema de inventario a:
 
 1. Analizar datos de producción (tiempos, rendimientos, cantidades)
 2. Proporcionar recomendaciones sobre:
