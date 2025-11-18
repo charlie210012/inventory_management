@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
-from models import User, ProductoTerminado, MovimientoProducto
+from models import User, ProductoTerminado, MovimientoProducto, MateriaPrima
 from schemas import (
     ProductoTerminadoResponse, 
     ProductoTerminadoCreate, 
@@ -56,8 +56,74 @@ def create_producto(
             detail="El código de producto ya existe"
         )
     
-    db_producto = ProductoTerminado(**producto.model_dump(), created_by=current_user.id)
+    # Preparar datos para crear el producto
+    producto_data = producto.model_dump(exclude=['presentaciones', 'materiales', 'volumen_total', 'tipo_inventario'])
+    
+    db_producto = ProductoTerminado(**producto_data, created_by=current_user.id)
     db.add(db_producto)
+    db.flush()  # Flush para obtener el ID sin hacer commit
+    
+    # Si es unidades, descontar materiales
+    if producto.unidad_medida == 'unidades' and producto.materiales and producto.presentaciones:
+        cantidad_total = sum(int(v) if v else 0 for v in producto.presentaciones.values())
+        
+        # Descontar envase
+        if producto.materiales.get('envase'):
+            envase = db.query(MateriaPrima).filter(
+                MateriaPrima.codigo == producto.materiales['envase']
+            ).first()
+            if not envase:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Envase no encontrado"
+                )
+            if envase.cantidad_actual < cantidad_total:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cantidad insuficiente de envase: disponible {envase.cantidad_actual}, requerido {cantidad_total}"
+                )
+            envase.cantidad_actual -= cantidad_total
+        
+        # Descontar gotero
+        if producto.materiales.get('gotero'):
+            gotero = db.query(MateriaPrima).filter(
+                MateriaPrima.codigo == producto.materiales['gotero']
+            ).first()
+            if not gotero:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Gotero no encontrado"
+                )
+            if gotero.cantidad_actual < cantidad_total:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cantidad insuficiente de gotero: disponible {gotero.cantidad_actual}, requerido {cantidad_total}"
+                )
+            gotero.cantidad_actual -= cantidad_total
+        
+        # Descontar caja
+        if producto.materiales.get('caja'):
+            caja = db.query(MateriaPrima).filter(
+                MateriaPrima.codigo == producto.materiales['caja']
+            ).first()
+            if not caja:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Caja no encontrada"
+                )
+            if caja.cantidad_actual < cantidad_total:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cantidad insuficiente de caja: disponible {caja.cantidad_actual}, requerido {cantidad_total}"
+                )
+            caja.cantidad_actual -= cantidad_total
+    
     db.commit()
     db.refresh(db_producto)
     return db_producto

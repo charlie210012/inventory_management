@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
-from datetime import datetime
-from typing import Optional
-from models import RoleEnum
+from datetime import datetime, date
+from typing import Optional, List
+from models import RoleEnum, TipoInventarioEnum, UnidadNegocioEnum
 
 # Schemas de Usuario
 class UserBase(BaseModel):
@@ -41,27 +41,31 @@ class LoginRequest(BaseModel):
 
 # Schemas de Materia Prima
 class MateriaPrimaBase(BaseModel):
+    codigo: str = Field(..., max_length=50)
     nombre: str = Field(..., max_length=100)
     descripcion: Optional[str] = None
     unidad_medida: str = Field(..., max_length=20)
     cantidad_actual: float = Field(..., ge=0)
     cantidad_minima: float = Field(..., ge=0)
-    precio_unitario: float = Field(..., ge=0)
+    lote: Optional[str] = None
     proveedor: Optional[str] = None
-    ubicacion: Optional[str] = None
+    fecha_ingreso: Optional[date] = None
+    tipo_inventario: str  # "BPE - Magistrales" o "Fabricación de derivados"
 
 class MateriaPrimaCreate(MateriaPrimaBase):
     pass
 
 class MateriaPrimaUpdate(BaseModel):
+    codigo: Optional[str] = None
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
     unidad_medida: Optional[str] = None
     cantidad_actual: Optional[float] = Field(None, ge=0)
     cantidad_minima: Optional[float] = Field(None, ge=0)
-    precio_unitario: Optional[float] = Field(None, ge=0)
+    lote: Optional[str] = None
     proveedor: Optional[str] = None
-    ubicacion: Optional[str] = None
+    fecha_ingreso: Optional[date] = None
+    tipo_inventario: Optional[str] = None
 
 class MateriaPrimaResponse(MateriaPrimaBase):
     id: int
@@ -138,7 +142,10 @@ class ProductoTerminadoBase(BaseModel):
     ubicacion: Optional[str] = None
 
 class ProductoTerminadoCreate(ProductoTerminadoBase):
-    pass
+    volumen_total: Optional[float] = None  # Para unidades (sum de presentaciones * volumen)
+    presentaciones: Optional[dict] = None  # {"3mL": 5, "10mL": 3, ...}
+    materiales: Optional[dict] = None  # {"envase": "codigo", "gotero": "codigo", "caja": "codigo"}
+    tipo_inventario: Optional[str] = None
 
 class ProductoTerminadoUpdate(BaseModel):
     codigo: Optional[str] = None
@@ -183,3 +190,126 @@ class MovimientoProductoResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# Schemas de Inventario
+class InventarioBase(BaseModel):
+    nombre: str = Field(..., max_length=50)
+    descripcion: Optional[str] = None
+
+class InventarioCreate(InventarioBase):
+    pass
+
+class InventarioResponse(InventarioBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Schemas de Materia Prima para relación en Producto
+class MateriaPrimaParaProducto(BaseModel):
+    id: int
+    codigo: Optional[str] = None
+    nombre: str
+    unidad_medida: str
+    
+    class Config:
+        from_attributes = True
+
+# Schemas de Producto
+class ProductoMateriaPrimaInput(BaseModel):
+    materia_prima_id: int
+    concentracion: float = Field(..., gt=0, le=100)
+
+class ProductoBase(BaseModel):
+    codigo: str = Field(..., max_length=50)
+    nombre: str = Field(..., max_length=100)
+    descripcion: Optional[str] = None
+    precio_produccion: float = Field(default=0, ge=0)
+    precio_venta: Optional[float] = Field(None, ge=0)
+    unidad_negocio: str  # "BPE - Magistrales", "Droguería", "Fabricación de derivados"
+    meses_vencimiento: int = Field(default=6, ge=0, le=12)  # Meses de vencimiento
+
+class ProductoCreate(ProductoBase):
+    materias_primas: List[ProductoMateriaPrimaInput] = []
+    inventarios: List[int] = []  # IDs de inventarios
+
+class ProductoUpdate(BaseModel):
+    codigo: Optional[str] = None
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    precio_produccion: Optional[float] = Field(None, ge=0)
+    precio_venta: Optional[float] = Field(None, ge=0)
+    unidad_negocio: Optional[str] = None
+    meses_vencimiento: Optional[int] = Field(None, ge=0, le=12)
+    materias_primas: Optional[List[ProductoMateriaPrimaInput]] = None
+    inventarios: Optional[List[int]] = None
+
+class ProductoResponse(ProductoBase):
+    id: int
+    created_by: Optional[int]
+    created_at: datetime
+    updated_at: datetime
+    inventarios: List[InventarioResponse] = []
+    materias_primas: List[dict] = []
+    
+    class Config:
+        from_attributes = True
+
+# Schema para registrar producción de productos
+class RegistrarProduccionInput(BaseModel):
+    producto_id: int
+    cantidad: float = Field(..., gt=0)
+    lote: Optional[str] = None
+    fecha_produccion: Optional[datetime] = None
+    fecha_vencimiento: Optional[datetime] = None
+    ubicacion: Optional[str] = None
+
+# Schemas para Historial de Descuentos
+class HistorialDescuentoResponse(BaseModel):
+    id: int
+    materia_prima_id: int
+    producto_id: int
+    producto_nombre: str
+    cantidad_descontada: float  # En gramos
+    concentracion: float  # %P/V
+    volumen_producido: float
+    unidad_volumen: str
+    fecha_produccion: datetime
+    fecha_descuento: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Schemas para Registro de Salidas
+class RegistroSalidaBase(BaseModel):
+    tipo_item: str  # "materia_prima" o "producto_terminado"
+    codigo_item: str
+    lote: str
+    cantidad_salida: float = Field(..., gt=0)
+    motivo_salida: str
+    observaciones: Optional[str] = None
+
+class RegistroSalidaCreate(RegistroSalidaBase):
+    materia_prima_id: Optional[int] = None
+    producto_terminado_id: Optional[int] = None
+
+class RegistroSalidaResponse(BaseModel):
+    id: int
+    tipo_item: str
+    codigo_item: str
+    nombre_item: str
+    lote: str
+    cantidad_salida: float
+    unidad_medida: str
+    motivo_salida: str
+    saldo_anterior: float
+    saldo_actual: float
+    observaciones: Optional[str]
+    created_by: Optional[int]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+

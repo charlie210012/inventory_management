@@ -1,20 +1,35 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
-import { materiasPrimasService } from '../services/api'
 import { PERMISOS, hasPermission } from '../utils/permissions'
-import { Plus, Edit, Trash2, Search, ArrowUpDown } from 'lucide-react'
-import { formatCurrency, formatNumber } from '../utils/formatters'
+import { Plus, Edit, Trash2, Search, X } from 'lucide-react'
+import { formatNumber } from '../utils/formatters'
 
 const MateriasPrimas = () => {
-  const { user } = useAuthStore()
+  const { user, token } = useAuthStore()
   const [materias, setMaterias] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [selectedMateria, setSelectedMateria] = useState(null)
-  const [showMovimientoModal, setShowMovimientoModal] = useState(false)
+  const [formData, setFormData] = useState({
+    codigo: '',
+    nombre: '',
+    descripcion: '',
+    unidad_medida: '',
+    cantidad_actual: 0,
+    cantidad_minima: 0,
+    lote: '',
+    proveedor: '',
+    fecha_ingreso: '',
+    tipo_inventario: 'BPE - Magistrales',
+  })
 
   const canModify = hasPermission(user?.role, PERMISOS.MODIFICAR_INVENTARIO)
+
+  const tiposInventario = [
+    { value: 'BPE - Magistrales', label: 'BPE - Magistrales' },
+    { value: 'Fabricación de derivados', label: 'Fabricación de derivados' },
+  ]
 
   useEffect(() => {
     loadMaterias()
@@ -22,8 +37,16 @@ const MateriasPrimas = () => {
 
   const loadMaterias = async () => {
     try {
-      const response = await materiasPrimasService.getAll()
-      setMaterias(response.data)
+      const response = await fetch('/api/materias-primas', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setMaterias(data)
+      }
     } catch (error) {
       console.error('Error cargando materias primas:', error)
     } finally {
@@ -31,46 +54,121 @@ const MateriasPrimas = () => {
     }
   }
 
+  const handleInputChange = (e) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: name.includes('cantidad') ? parseFloat(value) || 0 : value
+    }))
+  }
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+
+    if (!formData.codigo || !formData.nombre || !formData.unidad_medida) {
+      alert('Código, nombre y unidad de medida son requeridos')
+      return
+    }
+
+    try {
+      const method = selectedMateria ? 'PUT' : 'POST'
+      const url = selectedMateria ? `/api/materias-primas/${selectedMateria.id}` : '/api/materias-primas'
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      })
+
+      if (response.ok) {
+        setShowModal(false)
+        setSelectedMateria(null)
+        resetForm()
+        loadMaterias()
+        alert(selectedMateria ? 'Materia prima actualizada' : 'Materia prima creada')
+      } else {
+        const error = await response.json()
+        alert('Error: ' + error.detail)
+      }
+    } catch (error) {
+      alert('Error al guardar: ' + error.message)
+    }
+  }
+
+  const handleEdit = (materia) => {
+    setSelectedMateria(materia)
+    setFormData({
+      codigo: materia.codigo,
+      nombre: materia.nombre,
+      descripcion: materia.descripcion || '',
+      unidad_medida: materia.unidad_medida,
+      cantidad_actual: materia.cantidad_actual,
+      cantidad_minima: materia.cantidad_minima,
+      lote: materia.lote || '',
+      proveedor: materia.proveedor || '',
+      fecha_ingreso: materia.fecha_ingreso ? materia.fecha_ingreso.split('T')[0] : '',
+      tipo_inventario: materia.tipo_inventario,
+    })
+    setShowModal(true)
+  }
+
   const handleDelete = async (id) => {
     if (!confirm('¿Está seguro de eliminar esta materia prima?')) return
-    
-    try {
-      await materiasPrimasService.delete(id)
-      loadMaterias()
-    } catch (error) {
-      alert('Error al eliminar: ' + error.response?.data?.detail)
-    }
-  }
 
-  const handleSave = async (formData) => {
     try {
-      if (selectedMateria) {
-        await materiasPrimasService.update(selectedMateria.id, formData)
+      const response = await fetch(`/api/materias-primas/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        loadMaterias()
+        alert('Materia prima eliminada')
       } else {
-        await materiasPrimasService.create(formData)
+        const error = await response.json()
+        alert('Error: ' + error.detail)
       }
-      setShowModal(false)
-      setSelectedMateria(null)
-      loadMaterias()
     } catch (error) {
-      alert('Error al guardar: ' + error.response?.data?.detail)
+      alert('Error al eliminar: ' + error.message)
     }
   }
 
-  const handleMovimiento = async (formData) => {
-    try {
-      await materiasPrimasService.createMovimiento(formData)
-      setShowMovimientoModal(false)
-      setSelectedMateria(null)
-      loadMaterias()
-    } catch (error) {
-      alert('Error al registrar movimiento: ' + error.response?.data?.detail)
-    }
+  const handleOpenNew = () => {
+    setSelectedMateria(null)
+    resetForm()
+    setShowModal(true)
+  }
+
+  const resetForm = () => {
+    setFormData({
+      codigo: '',
+      nombre: '',
+      descripcion: '',
+      unidad_medida: '',
+      cantidad_actual: 0,
+      cantidad_minima: 0,
+      lote: '',
+      proveedor: '',
+      fecha_ingreso: '',
+      tipo_inventario: 'BPE - Magistrales',
+    })
+  }
+
+  const handleCloseModal = () => {
+    setShowModal(false)
+    setSelectedMateria(null)
+    resetForm()
   }
 
   const filteredMaterias = materias.filter(m =>
     m.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.descripcion?.toLowerCase().includes(searchTerm.toLowerCase())
+    m.codigo.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   if (loading) {
@@ -83,98 +181,80 @@ const MateriasPrimas = () => {
         <h1 className="text-3xl font-bold text-gray-900">Materias Primas</h1>
         {canModify && (
           <button
-            onClick={() => {
-              setSelectedMateria(null)
-              setShowModal(true)
-            }}
-            className="btn-primary flex items-center"
+            onClick={handleOpenNew}
+            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
           >
-            <Plus size={20} className="mr-2" />
-            Agregar Materia Prima
+            <Plus size={20} />
+            <span>Agregar Materia Prima</span>
           </button>
         )}
       </div>
 
-      {/* Search */}
-      <div className="card">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Buscar materia prima..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input pl-10"
-          />
-        </div>
+      {/* Buscador */}
+      <div className="relative">
+        <Search size={20} className="absolute left-3 top-3 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Buscar por código o nombre..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
       </div>
 
-      {/* Table */}
-      <div className="card overflow-x-auto">
-        <table className="table">
-          <thead className="bg-gray-50">
-            <tr>
-              <th>Nombre</th>
-              <th>Descripción</th>
-              <th>Cantidad</th>
-              <th>Unidad</th>
-              <th>Precio Unit.</th>
-              <th>Proveedor</th>
-              <th>Estado</th>
-              {canModify && <th>Acciones</th>}
+      {/* Tabla */}
+      <div className="bg-white rounded-lg shadow overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-gray-50 border-b">
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Código</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Nombre</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Cantidad</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Unidad</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Inventario</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Proveedor</th>
+              <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Estado</th>
+              {canModify && <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Acciones</th>}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredMaterias.map((materia) => (
-              <tr key={materia.id} className="hover:bg-gray-50">
-                <td className="font-semibold">{materia.nombre}</td>
-                <td className="text-gray-600">{materia.descripcion || '-'}</td>
-                <td>
+          <tbody>
+            {filteredMaterias.map(materia => (
+              <tr key={materia.id} className="border-b hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">{materia.codigo}</td>
+                <td className="px-6 py-4 text-sm text-gray-900">{materia.nombre}</td>
+                <td className="px-6 py-4 text-sm text-gray-600">
                   <span className={materia.cantidad_actual <= materia.cantidad_minima ? 'text-red-600 font-bold' : ''}>
                     {formatNumber(materia.cantidad_actual, 2)}
                   </span>
                 </td>
-                <td>{materia.unidad_medida}</td>
-                <td>{formatCurrency(materia.precio_unitario)}</td>
-                <td>{materia.proveedor || '-'}</td>
-                <td>
+                <td className="px-6 py-4 text-sm text-gray-600">{materia.unidad_medida}</td>
+                <td className="px-6 py-4 text-sm">
+                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                    {materia.tipo_inventario}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600">{materia.proveedor || '-'}</td>
+                <td className="px-6 py-4 text-sm">
                   {materia.cantidad_actual <= materia.cantidad_minima ? (
-                    <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs">Stock Bajo</span>
+                    <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">Stock Bajo</span>
                   ) : (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">Normal</span>
+                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">Normal</span>
                   )}
                 </td>
                 {canModify && (
-                  <td>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => {
-                          setSelectedMateria(materia)
-                          setShowMovimientoModal(true)
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Movimiento"
-                      >
-                        <ArrowUpDown size={18} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedMateria(materia)
-                          setShowModal(true)
-                        }}
-                        className="text-green-600 hover:text-green-800"
-                        title="Editar"
-                      >
-                        <Edit size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(materia.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+                  <td className="px-6 py-4 text-sm space-x-2">
+                    <button
+                      onClick={() => handleEdit(materia)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(materia.id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </td>
                 )}
               </tr>
@@ -183,224 +263,179 @@ const MateriasPrimas = () => {
         </table>
       </div>
 
-      {/* Modal Form */}
+      {/* Modal */}
       {showModal && (
-        <MateriaPrimaModal
-          materia={selectedMateria}
-          onClose={() => {
-            setShowModal(false)
-            setSelectedMateria(null)
-          }}
-          onSave={handleSave}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {selectedMateria ? 'Editar Materia Prima' : 'Agregar Materia Prima'}
+              </h2>
+              <button onClick={handleCloseModal} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="space-y-4">
+              {/* Código Interno */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Código Interno *</label>
+                <input
+                  type="text"
+                  name="codigo"
+                  value={formData.codigo}
+                  onChange={handleInputChange}
+                  disabled={selectedMateria !== null}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                  required
+                />
+              </div>
+
+              {/* Nombre */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  name="nombre"
+                  value={formData.nombre}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              {/* Unidad de Medida */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unidad de Medida *</label>
+                <input
+                  type="text"
+                  name="unidad_medida"
+                  placeholder="kg, litros, unidades, etc."
+                  value={formData.unidad_medida}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              {/* Descripción */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                <textarea
+                  name="descripcion"
+                  value={formData.descripcion}
+                  onChange={handleInputChange}
+                  rows="3"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Cantidad Actual y Mínima */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad Actual *</label>
+                  <input
+                    type="number"
+                    name="cantidad_actual"
+                    value={formData.cantidad_actual}
+                    onChange={handleInputChange}
+                    step="0.01"
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad Mínima *</label>
+                  <input
+                    type="number"
+                    name="cantidad_minima"
+                    value={formData.cantidad_minima}
+                    onChange={handleInputChange}
+                    step="0.01"
+                    min="0"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Lote */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lote</label>
+                <input
+                  type="text"
+                  name="lote"
+                  value={formData.lote}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Proveedor */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
+                <input
+                  type="text"
+                  name="proveedor"
+                  value={formData.proveedor}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Fecha de Ingreso */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Ingreso</label>
+                <input
+                  type="date"
+                  name="fecha_ingreso"
+                  value={formData.fecha_ingreso}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Tipo de Inventario */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Inventario Destino *</label>
+                <div className="space-y-2">
+                  {tiposInventario.map(tipo => (
+                    <label key={tipo.value} className="flex items-center space-x-3 p-3 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipo_inventario"
+                        value={tipo.value}
+                        checked={formData.tipo_inventario === tipo.value}
+                        onChange={handleInputChange}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm text-gray-900 font-medium">{tipo.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botones */}
+              <div className="flex justify-end space-x-3 pt-6 border-t mt-8">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  {selectedMateria ? 'Actualizar' : 'Crear'} Materia Prima
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
-
-      {/* Modal Movimiento */}
-      {showMovimientoModal && (
-        <MovimientoModal
-          materia={selectedMateria}
-          onClose={() => {
-            setShowMovimientoModal(false)
-            setSelectedMateria(null)
-          }}
-          onSave={handleMovimiento}
-        />
-      )}
-    </div>
-  )
-}
-
-// Modal Component
-const MateriaPrimaModal = ({ materia, onClose, onSave }) => {
-  const [formData, setFormData] = useState({
-    nombre: materia?.nombre || '',
-    descripcion: materia?.descripcion || '',
-    unidad_medida: materia?.unidad_medida || '',
-    cantidad_actual: materia?.cantidad_actual || 0,
-    cantidad_minima: materia?.cantidad_minima || 0,
-    precio_unitario: materia?.precio_unitario || 0,
-    proveedor: materia?.proveedor || '',
-    ubicacion: materia?.ubicacion || ''
-  })
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSave(formData)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-4">
-          {materia ? 'Editar Materia Prima' : 'Nueva Materia Prima'}
-        </h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Nombre *</label>
-              <input
-                type="text"
-                required
-                value={formData.nombre}
-                onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Unidad de Medida *</label>
-              <input
-                type="text"
-                required
-                value={formData.unidad_medida}
-                onChange={(e) => setFormData({ ...formData, unidad_medida: e.target.value })}
-                className="input"
-                placeholder="kg, litros, unidades..."
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Descripción</label>
-            <textarea
-              value={formData.descripcion}
-              onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-              className="input"
-              rows="2"
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Cantidad Actual *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.cantidad_actual}
-                onChange={(e) => setFormData({ ...formData, cantidad_actual: parseFloat(e.target.value) })}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Cantidad Mínima *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.cantidad_minima}
-                onChange={(e) => setFormData({ ...formData, cantidad_minima: parseFloat(e.target.value) })}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Precio Unitario *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.precio_unitario}
-                onChange={(e) => setFormData({ ...formData, precio_unitario: parseFloat(e.target.value) })}
-                className="input"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Proveedor</label>
-              <input
-                type="text"
-                value={formData.proveedor}
-                onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })}
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Ubicación</label>
-              <input
-                type="text"
-                value={formData.ubicacion}
-                onChange={(e) => setFormData({ ...formData, ubicacion: e.target.value })}
-                className="input"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary">
-              Guardar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-const MovimientoModal = ({ materia, onClose, onSave }) => {
-  const [formData, setFormData] = useState({
-    materia_prima_id: materia.id,
-    tipo: 'entrada',
-    cantidad: 0,
-    motivo: ''
-  })
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSave(formData)
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-4">Registrar Movimiento</h2>
-        <p className="text-gray-600 mb-4">Materia Prima: <strong>{materia.nombre}</strong></p>
-        <p className="text-gray-600 mb-4">Stock Actual: <strong>{formatNumber(materia.cantidad_actual, 2)} {materia.unidad_medida}</strong></p>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Tipo de Movimiento *</label>
-            <select
-              value={formData.tipo}
-              onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-              className="input"
-              required
-            >
-              <option value="entrada">Entrada</option>
-              <option value="salida">Salida</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Cantidad *</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={formData.cantidad}
-              onChange={(e) => setFormData({ ...formData, cantidad: parseFloat(e.target.value) })}
-              className="input"
-              min="0.01"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Motivo</label>
-            <textarea
-              value={formData.motivo}
-              onChange={(e) => setFormData({ ...formData, motivo: e.target.value })}
-              className="input"
-              rows="3"
-              placeholder="Describe el motivo del movimiento..."
-            />
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancelar
-            </button>
-            <button type="submit" className="btn-primary">
-              Registrar
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   )
 }

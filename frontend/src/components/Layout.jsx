@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { hasPermission, PERMISOS } from '../utils/permissions'
+import ChatBot from './ChatBot'
 import {
   Home,
   Package,
@@ -11,14 +12,19 @@ import {
   LogOut,
   Menu,
   X,
-  User
+  User,
+  Factory,
+  Boxes,
+  TrendingDown
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', path: '/', icon: Home, permission: PERMISOS.VER_INVENTARIO },
   { name: 'Materias Primas', path: '/materias-primas', icon: Package, permission: PERMISOS.VER_INVENTARIO },
-  { name: 'Gastos', path: '/gastos', icon: DollarSign, permission: PERMISOS.VER_INVENTARIO },
-  { name: 'Productos Terminados', path: '/productos-terminados', icon: ShoppingCart, permission: PERMISOS.VER_INVENTARIO },
+  { name: 'Listado de Productos', path: '/productos', icon: ShoppingCart, permission: PERMISOS.VER_INVENTARIO },
+  { name: 'Registros de Producción', path: '/productos-terminados', icon: Factory, permission: PERMISOS.VER_INVENTARIO },
+  { name: 'Salidas', path: '/salidas', icon: TrendingDown, permission: PERMISOS.VER_INVENTARIO },
+  { name: 'Inventario', path: '/inventario', icon: Boxes, permission: PERMISOS.VER_INVENTARIO },
   { name: 'Usuarios', path: '/usuarios', icon: Users, permission: PERMISOS.GESTIONAR_USUARIOS },
 ]
 
@@ -152,6 +158,9 @@ const Layout = ({ children }) => {
         <main className="flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
+
+        {/* Chat Bot Flotante */}
+        <ChatBot />
       </div>
     </div>
   )

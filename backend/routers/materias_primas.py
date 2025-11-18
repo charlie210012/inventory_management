@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from database import get_db
-from models import User, MateriaPrima, MovimientoMateriaPrima
+from models import User, MateriaPrima, MovimientoMateriaPrima, HistorialDescuentoMateriaPrima
 from schemas import (
     MateriaPrimaResponse, 
     MateriaPrimaCreate, 
     MateriaPrimaUpdate,
     MovimientoMateriaPrimaCreate,
-    MovimientoMateriaPrimaResponse
+    MovimientoMateriaPrimaResponse,
+    HistorialDescuentoResponse
 )
 from auth import can_view_inventory, can_modify_inventory
 
@@ -155,3 +156,23 @@ def get_stock_bajo(
         MateriaPrima.cantidad_actual <= MateriaPrima.cantidad_minima
     ).all()
     return materias
+
+@router.get("/{materia_id}/historial-descuentos", response_model=List[HistorialDescuentoResponse])
+def get_historial_descuentos(
+    materia_id: int,
+    current_user: User = Depends(can_view_inventory),
+    db: Session = Depends(get_db)
+):
+    """Obtener historial de descuentos de una materia prima"""
+    materia = db.query(MateriaPrima).filter(MateriaPrima.id == materia_id).first()
+    if not materia:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Materia prima no encontrada"
+        )
+    
+    historial = db.query(HistorialDescuentoMateriaPrima).filter(
+        HistorialDescuentoMateriaPrima.materia_prima_id == materia_id
+    ).order_by(HistorialDescuentoMateriaPrima.fecha_descuento.desc()).all()
+    
+    return historial
